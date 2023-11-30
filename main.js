@@ -3,12 +3,12 @@ const format = require('date-fns/format');
 const timezone_mock = require('timezone-mock');
 const fsp = require('fs/promises');
 const inquirer = require('inquirer');
+const fs = require('fs');
 
-// ---------- Healpers ---------- //
-// ------------------------------ //
-// Calculate the distance between two lat/lons
-// @see: https://stackoverflow.com/questions/18883601/function-to-calculate-distance-between-two-coordinates
-// Modified to produce output in nm rather than km
+// ---------- Helpers ----------
+/* Calculate the distance between two lat/lons
+@see: https://stackoverflow.com/questions/18883601/function-to-calculate-distance-between-two-coordinates
+Modified to produce output in nm rather than km */ 
 function getDistanceFromLatLonInNm(lat1, lon1, lat2, lon2) {
     var R = 6378.137; // Radius of the earth in km
     var dLat = deg2rad(lat2 - lat1);  // deg2rad below
@@ -26,8 +26,8 @@ function deg2rad(deg) {
     return deg * (Math.PI / 180)
 }
 
-// Calculate the bearing between two lat/lons
-// @see: https://stackoverflow.com/questions/46590154/calculate-bearing-between-2-points-with-javascript
+/* Calculate the bearing between two lat/lons
+@see: https://stackoverflow.com/questions/46590154/calculate-bearing-between-2-points-with-javascript */
 function toRadians(degrees) {
     return degrees * Math.PI / 180;
 };
@@ -62,14 +62,19 @@ async function main() {
             type: 'input',
             name: 'ident',
             message: 'Provide the N Number'
+        },
+        {
+            type: 'input',
+            name: 'model',
+            message: 'Provide the model of aircraft'
         }
     ]);
 
     // Mock UTC time so that all of our date calculations happen in UTC instead of local
     timezone_mock.register('UTC');
 
-    // Garmin G1000 Tracklog header @see: https://www.reddit.com/r/flying/comments/6jgntl/find_garmin_g1000_sample_csv_file/
-    const header = `#airframe_info, log_version="1.00", airframe_name="Cessna 402", unit_software_part_number="000-A0000-0A", unit_software_version="9.00", system_software_part_number="000-A0000-00", system_id="${res.ident}", mode=NORMAL,\n#yyy-mm-dd, hh:mm:ss,   hh:mm,  ident,      degrees,      degrees, ft Baro,  inch,  ft msl, deg C,     kt,     kt,     fpm,    deg,    deg,      G,      G,   deg,   deg, volts,   gals,   gals,      gph,      psi,   deg F,     psi,     Hg,    rpm,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,  ft wgs,  kt, enum,    deg,    MHz,    MHz,     MHz,     MHz,    fsd,    fsd,     kt,   deg,     nm,    deg,    deg,   bool,  enum,   enum,   deg,   deg,   fpm,   enum,   mt,    mt,     mt,    mt,     mt\n  Lcl Date, Lcl Time, UTCOfst, AtvWpt,     Latitude,    Longitude,    AltB, BaroA,  AltMSL,   OAT,    IAS, GndSpd,    VSpd,  Pitch,   Roll,  LatAc, NormAc,   HDG,   TRK, volt1,  FQtyL,  FQtyR, E1 FFlow, E1 FPres, E1 OilT, E1 OilP, E1 MAP, E1 RPM, E1 CHT1, E1 CHT2, E1 CHT3, E1 CHT4, E1 EGT1, E1 EGT2, E1 EGT3, E1 EGT4,  AltGPS, TAS, HSIS,    CRS,   NAV1,   NAV2,    COM1,    COM2,   HCDI,   VCDI, WndSpd, WndDr, WptDst, WptBrg, MagVar, AfcsOn, RollM, PitchM, RollC, PichC, VSpdG, GPSfix,  HAL,   VAL, HPLwas, HPLfd, VPLwas\n`;
+    // Garmin G1000 Tracklog header @see: https://www.reddit.com/r/flying/comments/6jgntl/find_garmin_g1000_sample_csv_file/   
+    const header = `#airframe_info, log_version="1.00", airframe_name="${res.model.toLocaleUpperCase()}", unit_software_part_number="000-A0000-0A", unit_software_version="9.00", system_software_part_number="000-A0000-00", system_id="${res.ident.toLocaleUpperCase()}", mode=NORMAL,\n#yyy-mm-dd, hh:mm:ss,   hh:mm,  ident,      degrees,      degrees, ft Baro,  inch,  ft msl, deg C,     kt,     kt,     fpm,    deg,    deg,      G,      G,   deg,   deg, volts,   gals,   gals,      gph,      psi,   deg F,     psi,     Hg,    rpm,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,  ft wgs,  kt, enum,    deg,    MHz,    MHz,     MHz,     MHz,    fsd,    fsd,     kt,   deg,     nm,    deg,    deg,   bool,  enum,   enum,   deg,   deg,   fpm,   enum,   mt,    mt,     mt,    mt,     mt\n  Lcl Date, Lcl Time, UTCOfst, AtvWpt,     Latitude,    Longitude,    AltB, BaroA,  AltMSL,   OAT,    IAS, GndSpd,    VSpd,  Pitch,   Roll,  LatAc, NormAc,   HDG,   TRK, volt1,  FQtyL,  FQtyR, E1 FFlow, E1 FPres, E1 OilT, E1 OilP, E1 MAP, E1 RPM, E1 CHT1, E1 CHT2, E1 CHT3, E1 CHT4, E1 EGT1, E1 EGT2, E1 EGT3, E1 EGT4,  AltGPS, TAS, HSIS,    CRS,   NAV1,   NAV2,    COM1,    COM2,   HCDI,   VCDI, WndSpd, WndDr, WptDst, WptBrg, MagVar, AfcsOn, RollM, PitchM, RollC, PichC, VSpdG, GPSfix,  HAL,   VAL, HPLwas, HPLfd, VPLwas\n`;
     let output = '';
 
     // Get the KML to parse via the URL the user provided
@@ -94,13 +99,15 @@ async function main() {
         // Parse out lat, lon, and alt
         const lon = coord[0];
         const lat = coord[1];
-        const alt = coord[2];
+        
+        // FlightAware KML altitude is in meters so we need to convert to feet
+        const alt = Math.round(coord[2] *  3.280839895);
 
         // Calculate dates
         const date = format(t, 'yyyy-LL-dd');
         const time = format(t, 'kk:mm:ss');
 
-        // Tell Forflight these times are UTC
+        // Tell ForeFlight these times are UTC
         const zone = '-00:00'
 
         // Placeholder for pitch and bank
@@ -153,8 +160,15 @@ async function main() {
         output += `${row.date.padStart(10)},${row.time.padStart(9)},${row.zone.padStart(8)},       ,${String(row.lat).padEnd(13)},${String(row.lon).padEnd(13)},        ,      ,${String(row.alt).padStart(8)},      ,       ,${String(row.spd).padStart(7)},        ,${row.pitch.padStart(7)},${row.bank.padStart(7)},       ,        ,     ,      ,      ,       ,       ,         ,         ,        ,        ,       ,       ,        ,        ,        ,        ,        ,        ,        ,        ,        ,    ,     ,${String(row.hdg).padStart(7)}\n`;
     }
 
-    // Write the output file
-    const filename = `outputs/${res.ident}-${format(rows[0].t, 'yyyy-LL-dd-kk:mm')}.csv`;
+    // Create a output directory if one does not exist
+
+    const directoryPath = './outputs';
+
+    if (!fs.existsSync(directoryPath)) {
+        fs.mkdirSync(directoryPath);
+    }
+
+    const filename = `outputs/${res.ident.toLocaleUpperCase()}-${format(rows[0].t, 'yyyy-LL-dd-kk:mm')}.csv`;
     console.log(filename);
     await fsp.writeFile(filename, header + output);
 }
