@@ -9,6 +9,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "command-line-args": "^6.0.0",
+    "command-line-usage": "^7.0.3",
     "date-fns": "^2.28.0",
     "inquirer": "^8.2.0",
     "parse-kml": "^1.0.1",

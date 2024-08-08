@@ -5,6 +5,65 @@ const fsp = require('fs/promises');
 const inquirer = require('inquirer');
 const { URL } = require('url');
 
+const commandLineArgs = require('command-line-args');
+const commandLineUsage = require('command-line-usage');
+
+// Define the command line argument structure
+const optionDefinitions = [
+    { name: 'url', alias: 'u', type: String, defaultOption: true },
+    { name: 'ident', alias: 'i', type: String },
+    { name: 'type', alias: 't', type: String },
+    { name: 'help', alias: 'h', type: Boolean }
+];
+const args = commandLineArgs(optionDefinitions);
+
+// Set up the command line help
+const helpSections = [
+    {
+        header: 'ForeFlight TrackLog Generator',
+        content: 'Generates a G1000 track log from a FlightAware Link which can be imported into ForeFlight. Run without arguments interactively supply the required information.'
+    },
+    {
+        header: 'Synopsis',
+        content: [
+            '$ node main.js',
+            '$ node main.js [{bold -i} {underline ident} {bold -t} {underline type}] {underline url}',
+            '$ node main.js {bold --help}'
+        ]
+    },
+    {
+        header: 'Options',
+        optionList: [
+            {
+                name: 'url',
+                alias: 'u',
+                defaultOption: true,
+                typeLabel: '{underline url}',
+                description: 'The FlightAware url to use. This should be a specific flight.'
+            },
+            {
+                name: 'ident',
+                alias: 'i',
+                typeLabel: '{underline aircraft ident}',
+                description: 'Optional aircraft ident to use. If unset, the ident will be inferred from the FlightAware url.'
+            },
+            {
+                name: 'type',
+                alias: 't',
+                typeLabel: '{underline aircraft type}',
+                description: 'Optional aircraft type to use. If unset, it will default to the \'Cessna 172\'.'
+            },
+            {
+                name: 'help',
+                alias: 'h',
+                type: Boolean,
+                description: 'Print this usage guide.'
+            }
+        ]
+    }
+]
+const usage = commandLineUsage(helpSections)
+
 // ---------- Helpers ---------- //
 // ------------------------------ //
 // Calculate the distance between two lat/lons
@@ -52,37 +111,73 @@ function bearing(startLat, startLng, destLat, destLng) {
 // ------------ main ------------ //
 // ------------------------------ //
 async function main() {
-    // Grab some information from the user about this flight
-    let res = await inquirer.prompt([ 
-        {
-            type: 'input',
-            name: 'url',
-            message: 'Paste the FlightAware link'
-        },
-        // 
-    ]);
 
-    const flightAwareURL = new URL(res.url);
-    const inferredIdent = flightAwareURL.pathname.split('/')[3];
+    // Set up stubs for later use
+    let url, ident, type = 'Cessna 172';
 
-    res = await inquirer.prompt([
-        {
-            type: 'input',
-            name: 'ident',
-            message: 'Provide N Number',
-            default: 'default: ' + inferredIdent
+    // Go ahead and handle command line help if needed
+    if (args.help) {
+        console.log(usage);
+        process.exit(0);
+    }
+
+    try {
+
+        // If a url was passed in through the command line, then grab the url and ident from there.
+        // Otherwise, use inquirer to grab information
+        if (args.url !== undefined) {
+            url = new URL(args.url);
+            if (args.ident !== undefined) ident = args.ident;
+            else ident = url.pathname.split('/')[3];
+
+            if (args.type !== undefined) type = args.type;
+        } else {
+
+            // Grab some information from the user about this flight
+            let res = await inquirer.prompt([
+                {
+                    type: 'input',
+                    name: 'url',
+                    message: 'Paste the FlightAware link'
+                },
+            ]);
+
+            url = new URL(res.url);
+
+            res = await inquirer.prompt([
+                {
+                    type: 'input',
+                    name: 'ident',
+                    message: 'Provide N Number',
+                    default: url.pathname.split('/')[3]
+                }
+            ]);
+            ident = res.ident;
+
+            res = await inquirer.prompt([
+                {
+                    type: 'input',
+                    name: 'type',
+                    message: 'Provide Aircraft Type',
+                    default: type
+                }
+            ]);
+            type = res.type;
         }
-    ]);
+    } catch (e) {
+        if (e.code === 'ERR_INVALID_URL') console.error('Invalid FlightAware Url!');
+        process.exit(1);
+    }
 
     // Mock UTC time so that all of our date calculations happen in UTC instead of local
     timezone_mock.register('UTC');
 
     // Garmin G1000 Track log header @see: https://www.reddit.com/r/flying/comments/6jgntl/find_garmin_g1000_sample_csv_file/
-    const header = `#airframe_info, log_version="1.00", airframe_name="Cessna 402", unit_software_part_number="000-A0000-0A", unit_software_version="9.00", system_software_part_number="000-A0000-00", system_id="${res.ident}", mode=NORMAL,\n#yyy-mm-dd, hh:mm:ss,   hh:mm,  ident,      degrees,      degrees, ft Baro,  inch,  ft msl, deg C,     kt,     kt,     fpm,    deg,    deg,      G,      G,   deg,   deg, volts,   gals,   gals,      gph,      psi,   deg F,     psi,     Hg,    rpm,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,  ft wgs,  kt, enum,    deg,    MHz,    MHz,     MHz,     MHz,    fsd,    fsd,     kt,   deg,     nm,    deg,    deg,   bool,  enum,   enum,   deg,   deg,   fpm,   enum,   mt,    mt,     mt,    mt,     mt\n  Lcl Date, Lcl Time, UTCOfst, AtvWpt,     Latitude,    Longitude,    AltB, BaroA,  AltMSL,   OAT,    IAS, GndSpd,    VSpd,  Pitch,   Roll,  LatAc, NormAc,   HDG,   TRK, volt1,  FQtyL,  FQtyR, E1 FFlow, E1 FPres, E1 OilT, E1 OilP, E1 MAP, E1 RPM, E1 CHT1, E1 CHT2, E1 CHT3, E1 CHT4, E1 EGT1, E1 EGT2, E1 EGT3, E1 EGT4,  AltGPS, TAS, HSIS,    CRS,   NAV1,   NAV2,    COM1,    COM2,   HCDI,   VCDI, WndSpd, WndDr, WptDst, WptBrg, MagVar, AfcsOn, RollM, PitchM, RollC, PichC, VSpdG, GPSfix,  HAL,   VAL, HPLwas, HPLfd, VPLwas\n`;
+    const header = `#airframe_info, log_version="1.00", airframe_name="${type}", unit_software_part_number="000-A0000-0A", unit_software_version="9.00", system_software_part_number="000-A0000-00", system_id="${ident}", mode=NORMAL,\n#yyy-mm-dd, hh:mm:ss,   hh:mm,  ident,      degrees,      degrees, ft Baro,  inch,  ft msl, deg C,     kt,     kt,     fpm,    deg,    deg,      G,      G,   deg,   deg, volts,   gals,   gals,      gph,      psi,   deg F,     psi,     Hg,    rpm,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,  ft wgs,  kt, enum,    deg,    MHz,    MHz,     MHz,     MHz,    fsd,    fsd,     kt,   deg,     nm,    deg,    deg,   bool,  enum,   enum,   deg,   deg,   fpm,   enum,   mt,    mt,     mt,    mt,     mt\n  Lcl Date, Lcl Time, UTCOfst, AtvWpt,     Latitude,    Longitude,    AltB, BaroA,  AltMSL,   OAT,    IAS, GndSpd,    VSpd,  Pitch,   Roll,  LatAc, NormAc,   HDG,   TRK, volt1,  FQtyL,  FQtyR, E1 FFlow, E1 FPres, E1 OilT, E1 OilP, E1 MAP, E1 RPM, E1 CHT1, E1 CHT2, E1 CHT3, E1 CHT4, E1 EGT1, E1 EGT2, E1 EGT3, E1 EGT4,  AltGPS, TAS, HSIS,    CRS,   NAV1,   NAV2,    COM1,    COM2,   HCDI,   VCDI, WndSpd, WndDr, WptDst, WptBrg, MagVar, AfcsOn, RollM, PitchM, RollC, PichC, VSpdG, GPSfix,  HAL,   VAL, HPLwas, HPLfd, VPLwas\n`;
     let output = '';
 
     // Get the KML to parse via the URL the user provided
-    const data = await parseKML.toJson(flightAwareURL.href + '/google_earth');
+    const data = await parseKML.toJson(url.href + '/google_earth');
 
     // Get the third feature (the first is the origin and the second is the destination)
     const feat = data.features[2];
@@ -163,7 +258,7 @@ async function main() {
     }
 
     // Write the output file
-    const filename = `outputs/${res.ident}-${format(rows[0].t, 'yyyy-LL-dd-HH:mm')}.csv`;
+    const filename = `outputs/${ident}-${format(rows[0].t, 'yyyy-LL-dd-HH:mm')}.csv`;
     console.log(filename);
     await fsp.writeFile(filename, header + output);
 }
