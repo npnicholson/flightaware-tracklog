@@ -3,8 +3,9 @@ const format = require('date-fns/format');
 const timezone_mock = require('timezone-mock');
 const fsp = require('fs/promises');
 const inquirer = require('inquirer');
+const { URL } = require('url');
 
-// ---------- Healpers ---------- //
+// ---------- Helpers ---------- //
 // ------------------------------ //
 // Calculate the distance between two lat/lons
 // @see: https://stackoverflow.com/questions/18883601/function-to-calculate-distance-between-two-coordinates
@@ -52,28 +53,36 @@ function bearing(startLat, startLng, destLat, destLng) {
 // ------------------------------ //
 async function main() {
     // Grab some information from the user about this flight
-    const res = await inquirer.prompt([ 
+    let res = await inquirer.prompt([ 
         {
             type: 'input',
             name: 'url',
-            message: 'Paste the Flightaware link'
+            message: 'Paste the FlightAware link'
         },
+        // 
+    ]);
+
+    const flightAwareURL = new URL(res.url);
+    const inferredIdent = flightAwareURL.pathname.split('/')[3];
+
+    res = await inquirer.prompt([
         {
             type: 'input',
             name: 'ident',
-            message: 'Provide the N Number'
+            message: 'Provide N Number',
+            default: 'default: ' + inferredIdent
         }
     ]);
 
     // Mock UTC time so that all of our date calculations happen in UTC instead of local
     timezone_mock.register('UTC');
 
-    // Garmin G1000 Tracklog header @see: https://www.reddit.com/r/flying/comments/6jgntl/find_garmin_g1000_sample_csv_file/
+    // Garmin G1000 Track log header @see: https://www.reddit.com/r/flying/comments/6jgntl/find_garmin_g1000_sample_csv_file/
     const header = `#airframe_info, log_version="1.00", airframe_name="Cessna 402", unit_software_part_number="000-A0000-0A", unit_software_version="9.00", system_software_part_number="000-A0000-00", system_id="${res.ident}", mode=NORMAL,\n#yyy-mm-dd, hh:mm:ss,   hh:mm,  ident,      degrees,      degrees, ft Baro,  inch,  ft msl, deg C,     kt,     kt,     fpm,    deg,    deg,      G,      G,   deg,   deg, volts,   gals,   gals,      gph,      psi,   deg F,     psi,     Hg,    rpm,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,   deg F,  ft wgs,  kt, enum,    deg,    MHz,    MHz,     MHz,     MHz,    fsd,    fsd,     kt,   deg,     nm,    deg,    deg,   bool,  enum,   enum,   deg,   deg,   fpm,   enum,   mt,    mt,     mt,    mt,     mt\n  Lcl Date, Lcl Time, UTCOfst, AtvWpt,     Latitude,    Longitude,    AltB, BaroA,  AltMSL,   OAT,    IAS, GndSpd,    VSpd,  Pitch,   Roll,  LatAc, NormAc,   HDG,   TRK, volt1,  FQtyL,  FQtyR, E1 FFlow, E1 FPres, E1 OilT, E1 OilP, E1 MAP, E1 RPM, E1 CHT1, E1 CHT2, E1 CHT3, E1 CHT4, E1 EGT1, E1 EGT2, E1 EGT3, E1 EGT4,  AltGPS, TAS, HSIS,    CRS,   NAV1,   NAV2,    COM1,    COM2,   HCDI,   VCDI, WndSpd, WndDr, WptDst, WptBrg, MagVar, AfcsOn, RollM, PitchM, RollC, PichC, VSpdG, GPSfix,  HAL,   VAL, HPLwas, HPLfd, VPLwas\n`;
     let output = '';
 
     // Get the KML to parse via the URL the user provided
-    const data = await parseKML.toJson(res.url + '/google_earth');
+    const data = await parseKML.toJson(flightAwareURL.href + '/google_earth');
 
     // Get the third feature (the first is the origin and the second is the destination)
     const feat = data.features[2];
@@ -98,9 +107,9 @@ async function main() {
 
         // Calculate dates
         const date = format(t, 'yyyy-LL-dd');
-        const time = format(t, 'kk:mm:ss');
+        const time = format(t, 'HH:mm:ss');
 
-        // Tell Forflight these times are UTC
+        // Tell Foreflight these times are UTC
         const zone = '-00:00'
 
         // Placeholder for pitch and bank
@@ -154,7 +163,7 @@ async function main() {
     }
 
     // Write the output file
-    const filename = `outputs/${res.ident}-${format(rows[0].t, 'yyyy-LL-dd-kk:mm')}.csv`;
+    const filename = `outputs/${res.ident}-${format(rows[0].t, 'yyyy-LL-dd-HH:mm')}.csv`;
     console.log(filename);
     await fsp.writeFile(filename, header + output);
 }
