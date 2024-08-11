@@ -2,6 +2,7 @@
   "name": "foreflight-tracklog",
   "version": "1.0.0",
   "description": "",
+  "type": "module",
   "main": "main.js",
   "scripts": {
     "main": "node main.js"
@@ -9,6 +10,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "chalk": "^5.3.0",
     "command-line-args": "^6.0.0",
     "command-line-usage": "^7.0.3",
     "date-fns": "^2.28.0",
